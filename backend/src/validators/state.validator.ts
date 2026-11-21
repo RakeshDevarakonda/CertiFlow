@@ -1,5 +1,4 @@
 import { celebrate, Joi, Segments } from 'celebrate';
-import { ApprovalAction } from '@prisma/client';
 
 export const batchIdParamValidator = celebrate({
   [Segments.PARAMS]: Joi.object().keys({
@@ -47,28 +46,14 @@ export const cancelCertificateValidator = celebrate({
   })
 });
 
-export const stateDecisionValidator = celebrate({
-  [Segments.PARAMS]: Joi.object().keys({
-    id: Joi.string().uuid().required().messages({
-      'string.guid': 'Invalid Batch ID format (must be a valid UUID).'
-    })
-  }),
-  [Segments.BODY]: Joi.object().keys({
-    action: Joi.string()
-      .valid(ApprovalAction.APPROVED, ApprovalAction.RETURNED, ApprovalAction.REJECTED)
-      .required()
-      .messages({
-        'any.only': 'Action must be one of: APPROVED, RETURNED, REJECTED.',
-        'any.required': 'Decision action is required.'
-      }),
-    comment: Joi.string().trim().max(500).when('action', {
-      is: Joi.valid(ApprovalAction.RETURNED, ApprovalAction.REJECTED),
-      then: Joi.string().required().min(5).messages({
-        'string.empty': 'A reason/comment is required when returning or rejecting a batch.',
-        'string.min': 'Reason must be at least 5 characters long.',
-        'any.required': 'A reason/comment is required when returning or rejecting a batch.'
-      }),
-      otherwise: Joi.optional().allow('', null)
-    })
+export const slaQueryValidator = celebrate({
+  [Segments.QUERY]: Joi.object().keys({
+    hours: Joi.number().integer().min(0).max(720).default(48).messages({
+      'number.base': 'SLA threshold hours must be an integer.',
+      'number.min': 'SLA threshold hours must be at least 0.',
+      'number.max': 'SLA threshold hours cannot exceed 720 hours (30 days).'
+    }),
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(10)
   })
 });

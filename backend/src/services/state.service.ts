@@ -388,6 +388,88 @@ export class StateService {
 
     return result;
   }
+
+  // 6. SLA Breach & Stuck Batches Monitoring (Moment 5)
+  async getStuckBatches(thresholdHours: number = 48, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+    const thresholdDate = new Date(Date.now() - thresholdHours * 60 * 60 * 1000);
+
+    const whereClause = {
+      status: {
+        in: [BatchStatus.DISTRICT_PENDING, BatchStatus.QUALITY_PENDING, BatchStatus.STATE_PENDING]
+      },
+      lastActivityAt: {
+        lt: thresholdDate
+      }
+    };
+
+    const [total, batches] = await prisma.$transaction([
+      prisma.batch.count({ where: whereClause }),
+      prisma.batch.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy: { lastActivityAt: 'asc' }, // Most severely delayed first
+        include: {
+          centre: {
+            select: { id: true, name: true, code: true, district: true, state: true }
+          },
+          approvals: {
+            include: {
+              officer: {
+                select: { id: true, name: true, role: true, district: true }
+              }
+            },
+            orderBy: { createdAt: 'desc' }
+          }
+        }
+      })
+    ]);
+
+    const formatted = batches.map((b) => {
+      const hoursInactive = Math.round(
+        (Date.now() - new Date(b.lastActivityAt).getTime()) / (1000 * 60 * 60)
+      );
+
+      return {
+        id: b.id,
+        batchNumber: b.batchNumber,
+        courseName: b.courseName,
+        status: b.status,
+        candidateCount: b.candidateCount,
+        approvalRound: b.approvalRound,
+        submittedAt: b.submittedAt,
+        lastActivityAt: b.lastActivityAt,
+        hoursInactive,
+        breachedByHours: hoursInactive - thresholdHours,
+        centre: b.centre,
+        lastApprovalAction: b.approvals[0]
+          ? {
+              officer: b.approvals[0].officer.name,
+              stage: b.approvals[0].stage,
+              action: b.approvals[0].action,
+              date: b.approvals[0].createdAt
+            }
+          : null
+      };
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      thresholdHours,
+      totalBreached: total,
+      batches: formatted,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    };
+  }
 }
 
 export const stateService = new StateService();

@@ -6,7 +6,8 @@ import { paginationQueryValidator } from '../validators/batch.validator.js';
 import {
   batchIdParamValidator,
   stateReasonValidator,
-  cancelCertificateValidator
+  cancelCertificateValidator,
+  slaQueryValidator
 } from '../validators/state.validator.js';
 
 const router = Router();
@@ -22,7 +23,14 @@ router.get(
   (req, res) => stateController.getPendingBatches(req, res)
 );
 
-// 2. POST /api/v1/state/batches/:id/approve - Give final approval & issue certificates
+// 2. GET /api/v1/state/sla/stuck-batches - SLA Breach & Inactivity Monitor (Moment 5)
+router.get(
+  '/sla/stuck-batches',
+  slaQueryValidator,
+  (req, res) => stateController.getStuckBatches(req, res)
+);
+
+// 3. POST /api/v1/state/batches/:id/approve - Give final approval & issue certificates
 router.post(
   '/batches/:id/approve',
   batchIdParamValidator,

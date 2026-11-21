@@ -134,6 +134,32 @@ export class StateController {
       });
     }
   }
+
+  // 6. GET /api/v1/state/sla/stuck-batches - Moment 5
+  async getStuckBatches(req: Request, res: Response): Promise<void> {
+    try {
+      const hours = req.query.hours ? parseInt(req.query.hours as string, 10) : 48;
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+
+      const result = await stateService.getStuckBatches(hours, page, limit);
+
+      res.status(200).json({
+        success: true,
+        data: result.batches,
+        sla: {
+          thresholdHours: result.thresholdHours,
+          totalBreached: result.totalBreached
+        },
+        pagination: result.pagination
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to fetch stuck batches.'
+      });
+    }
+  }
 }
 
 export const stateController = new StateController();
