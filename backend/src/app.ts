@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes.js';
 import batchRoutes from './routes/batch.routes.js';
 import districtRoutes from './routes/district.routes.js';
 import qualityRoutes from './routes/quality.routes.js';
+import stateRoutes from './routes/state.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -52,6 +53,7 @@ export const createApp = () => {
   app.use('/api/v1/batches', batchRoutes);
   app.use('/api/v1/district', districtRoutes);
   app.use('/api/v1/quality', qualityRoutes);
+  app.use('/api/v1/state', stateRoutes);
 
   // Root API route
   app.get('/api/v1', (_req: Request, res: Response) => {
