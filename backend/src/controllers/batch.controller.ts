@@ -108,6 +108,31 @@ export class BatchController {
     }
   }
 
+  // GET /api/v1/batches/:id/candidates - View paginated candidates of a batch
+  async getCandidates(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const centreId = req.user?.centreId || undefined;
+
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+
+      const result = await batchService.getCandidates(id, centreId, page, limit);
+
+      res.status(200).json({
+        success: true,
+        data: result.candidates,
+        pagination: result.pagination
+      });
+    } catch (error: any) {
+      const status = error.message?.includes('Forbidden') ? 403 : 404;
+      res.status(status).json({
+        success: false,
+        message: error.message || 'Candidates not found.'
+      });
+    }
+  }
+
   // 4. PUT /api/v1/batches/:id - Fix and resubmit returned batch (Moment 6)
   async resubmitBatch(req: Request, res: Response): Promise<void> {
     try {

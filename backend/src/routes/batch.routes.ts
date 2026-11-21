@@ -7,7 +7,8 @@ import {
   batchIdParamValidator,
   paginationQueryValidator,
   createAndSubmitBatchValidator,
-  resubmitBatchValidator
+  resubmitBatchValidator,
+  batchCandidatesQueryValidator
 } from '../validators/batch.validator.js';
 
 const router = Router();
@@ -32,14 +33,21 @@ router.get(
   (req, res) => batchController.getMyBatches(req, res)
 );
 
-// 3. GET /api/v1/batches/:id - View batch details, candidates, and approval history
+// 3. GET /api/v1/batches/:id - View batch details and approval history
 router.get(
   '/:id',
   batchIdParamValidator,
   (req, res) => batchController.getBatchById(req, res)
 );
 
-// 4. PUT /api/v1/batches/:id - Fix and resubmit returned batch (Training Centre)
+// 4. GET /api/v1/batches/:id/candidates - View candidates in a batch (paginated)
+router.get(
+  '/:id/candidates',
+  batchCandidatesQueryValidator,
+  (req, res) => batchController.getCandidates(req, res)
+);
+
+// 5. PUT /api/v1/batches/:id - Fix and resubmit returned batch (Training Centre)
 router.put(
   '/:id',
   requireRole([Role.TRAINING_CENTRE]),

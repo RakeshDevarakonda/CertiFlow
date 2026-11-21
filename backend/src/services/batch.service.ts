@@ -265,6 +265,47 @@ export class BatchService {
     return batch;
   }
 
+  // GET /api/v1/batches/:id/candidates - View paginated candidates of a batch
+  async getCandidates(batchId: string, centreId?: string, page: number = 1, limit: number = 10) {
+    const batch = await prisma.batch.findUnique({
+      where: { id: batchId }
+    });
+
+    if (!batch) {
+      throw new Error('Batch not found.');
+    }
+
+    if (centreId && batch.centreId !== centreId) {
+      throw new Error('Forbidden. You do not have permission to view this batch.');
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [total, candidates] = await prisma.$transaction([
+      prisma.candidate.count({ where: { batchId } }),
+      prisma.candidate.findMany({
+        where: { batchId },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'asc' }
+      })
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      candidates,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    };
+  }
+
   // 4. PUT /api/v1/batches/:id - Fix and resubmit returned batch with corrected spreadsheet (Moment 6)
   async resubmitBatch(
     batchId: string,
