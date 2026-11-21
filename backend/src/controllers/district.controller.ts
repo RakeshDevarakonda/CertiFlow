@@ -39,6 +39,42 @@ export class DistrictController {
     }
   }
 
+  // 1.1 GET /api/v1/district/batches/approved-by-me - List all batches approved by this officer
+  async getApprovedByMeBatches(req: Request, res: Response): Promise<void> {
+    try {
+      const officerDistrict = req.user?.district;
+      const officerId = req.user?.id;
+
+      if (!officerDistrict || !officerId) {
+        res.status(403).json({
+          success: false,
+          message: 'Only district officers can view their approved batches.'
+        });
+        return;
+      }
+
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+      const result = await districtService.getApprovedByMeBatches(
+        officerId,
+        page,
+        limit
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result.batches,
+        pagination: result.pagination
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to fetch approved batches.'
+      });
+    }
+  }
+
   // 2. POST /api/v1/district/batches/:id/decision - Unified Decision (APPROVED | RETURNED | REJECTED)
   async recordDecision(req: Request, res: Response): Promise<void> {
     try {

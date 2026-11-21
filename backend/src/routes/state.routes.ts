@@ -23,6 +23,13 @@ router.get(
   (req, res) => stateController.getPendingBatches(req, res)
 );
 
+// 1.1 GET /api/v1/state/batches/approved-by-me - List batches approved by State Office
+router.get(
+  '/batches/approved-by-me',
+  paginationQueryValidator,
+  (req, res) => stateController.getApprovedByMeBatches(req, res)
+);
+
 // 2. GET /api/v1/state/sla/stuck-batches - SLA Breach & Inactivity Monitor (Moment 5)
 router.get(
   '/sla/stuck-batches',

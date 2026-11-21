@@ -29,6 +29,33 @@ export class QualityController {
     }
   }
 
+  // 1.1 GET /api/v1/quality/batches/approved-by-me
+  async getApprovedByMeBatches(req: Request, res: Response): Promise<void> {
+    try {
+      const officerId = req.user?.id;
+      if (!officerId) {
+        res.status(401).json({ success: false, message: 'Unauthorized.' });
+        return;
+      }
+
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+      const result = await qualityService.getApprovedByMeBatches(officerId, page, limit);
+
+      res.status(200).json({
+        success: true,
+        data: result.batches,
+        pagination: result.pagination
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to fetch approved quality batches.'
+      });
+    }
+  }
+
   // 2. POST /api/v1/quality/batches/:id/decision - Unified Decision
   async recordDecision(req: Request, res: Response): Promise<void> {
     try {

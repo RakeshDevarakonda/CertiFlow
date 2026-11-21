@@ -22,6 +22,13 @@ router.get(
   (req, res) => qualityController.getPendingBatches(req, res)
 );
 
+// 1.1 GET /api/v1/quality/batches/approved-by-me - Batches approved by Quality officer
+router.get(
+  '/batches/approved-by-me',
+  paginationQueryValidator,
+  (req, res) => qualityController.getApprovedByMeBatches(req, res)
+);
+
 // 2. POST /api/v1/quality/batches/:id/approve - Approve batch -> Promotes to STATE_PENDING
 router.post(
   '/batches/:id/approve',

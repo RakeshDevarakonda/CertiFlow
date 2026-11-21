@@ -1,27 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { CheckCircle2, RotateCcw, XCircle, Users, RefreshCw, Clock } from 'lucide-react';
+import { CheckCircle2, RotateCcw, XCircle, Users, RefreshCw, Check } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
 
 export const DistrictOfficerView: React.FC = () => {
   const { user, activePersona } = useSelector((state: RootState) => state.auth);
-  const [batches, setBatches] = useState<any[]>([]);
+  const [pendingBatches, setPendingBatches] = useState<any[]>([]);
+  const [approvedBatches, setApprovedBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Filter tab: "Needs My Review" vs "Approved By Me (Waiting for Officer 2)"
-  const [activeTab, setActiveTab] = useState<'actionable' | 'voted' | 'all'>('actionable');
+  // Filter tab: "Needs My Review" vs "Approved By Me"
+  const [activeTab, setActiveTab] = useState<'actionable' | 'voted'>('actionable');
 
   // Return modal
   const [returnBatchId, setReturnBatchId] = useState<string | null>(null);
   const [returnComment, setReturnComment] = useState('');
 
-  const fetchPendingBatches = async () => {
+  const fetchDistrictData = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/district/batches/pending');
-      setBatches(res.data.data || []);
+      const [pendingRes, approvedRes] = await Promise.all([
+        api.get('/district/batches/pending'),
+        api.get('/district/batches/approved-by-me')
+      ]);
+
+      setPendingBatches(pendingRes.data.data || []);
+      setApprovedBatches(approvedRes.data.data || []);
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -30,8 +36,8 @@ export const DistrictOfficerView: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPendingBatches();
-    const handleSync = () => fetchPendingBatches();
+    fetchDistrictData();
+    const handleSync = () => fetchDistrictData();
     window.addEventListener('outbox-processed', handleSync);
     return () => window.removeEventListener('outbox-processed', handleSync);
   }, [activePersona?.id]);
@@ -40,7 +46,7 @@ export const DistrictOfficerView: React.FC = () => {
     try {
       setActionLoading(batchId);
       await api.post(`/district/batches/${batchId}/approve`, {});
-      await fetchPendingBatches();
+      await fetchDistrictData();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Approval failed');
     } finally {
@@ -59,7 +65,7 @@ export const DistrictOfficerView: React.FC = () => {
       await api.post(`/district/batches/${batchId}/return`, { comment: returnComment });
       setReturnBatchId(null);
       setReturnComment('');
-      await fetchPendingBatches();
+      await fetchDistrictData();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Return failed');
     } finally {
@@ -74,7 +80,7 @@ export const DistrictOfficerView: React.FC = () => {
     try {
       setActionLoading(batchId);
       await api.post(`/district/batches/${batchId}/reject`, { comment: reason.trim() });
-      await fetchPendingBatches();
+      await fetchDistrictData();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Rejection failed');
     } finally {
@@ -82,16 +88,8 @@ export const DistrictOfficerView: React.FC = () => {
     }
   };
 
-  // Filter batches based on current officer's vote
-  const actionableBatches = batches.filter((b) => !b.quorumStatus?.hasOfficerApproved);
-  const votedBatches = batches.filter((b) => b.quorumStatus?.hasOfficerApproved);
-
-  const displayedBatches =
-    activeTab === 'actionable'
-      ? actionableBatches
-      : activeTab === 'voted'
-      ? votedBatches
-      : batches;
+  // Batches that need this officer's review (pending + officer has NOT approved)
+  const actionableBatches = pendingBatches.filter((b) => !b.quorumStatus?.hasOfficerApproved);
 
   return (
     <div className="space-y-6">
@@ -104,7 +102,7 @@ export const DistrictOfficerView: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={fetchPendingBatches}
+          onClick={fetchDistrictData}
           className="flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-sm"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -116,7 +114,7 @@ export const DistrictOfficerView: React.FC = () => {
       <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 flex items-start space-x-3 text-xs text-blue-900">
         <Users className="w-4 h-4 text-blue-700 flex-shrink-0 mt-0.5" />
         <div className="leading-relaxed">
-          <span className="font-bold">Multi-Officer Quorum Rule:</span> Every batch requires <strong>2 approvals</strong> from distinct officers in this district. Once you approve, the batch awaits the second officer before automatically moving to State / Quality review.
+          <span className="font-bold">Multi-Officer Quorum Rule:</span> Every batch requires <strong>2 approvals</strong> from distinct officers in this district. Once approved, the record is permanently retained in your <strong>"Approved By Me"</strong> ledger.
         </div>
       </div>
 
@@ -144,21 +142,10 @@ export const DistrictOfficerView: React.FC = () => {
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <span>Approved By Me (Waiting for 2nd Officer)</span>
+          <span>Approved By Me</span>
           <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeTab === 'voted' ? 'bg-blue-900 text-white' : 'bg-slate-100 text-slate-700'}`}>
-            {votedBatches.length}
+            {approvedBatches.length}
           </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-            activeTab === 'all'
-              ? 'bg-blue-700 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          All District Batches ({batches.length})
         </button>
       </div>
 
@@ -167,12 +154,12 @@ export const DistrictOfficerView: React.FC = () => {
         <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
           <h3 className="font-semibold text-slate-800 text-xs uppercase tracking-wider">
             {activeTab === 'actionable'
-              ? 'Batches Awaiting Your Vote'
-              : activeTab === 'voted'
-              ? 'Your Approved Batches (Awaiting Second Officer Sign-off)'
-              : 'All Pending District Batches'}
+              ? 'Batches Awaiting Your District Review'
+              : 'Batches Approved by You'}
           </h3>
-          <span className="text-xs text-slate-500 font-medium">Count: {displayedBatches.length}</span>
+          <span className="text-xs text-slate-500 font-medium">
+            Count: {activeTab === 'actionable' ? actionableBatches.length : approvedBatches.length}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -182,98 +169,131 @@ export const DistrictOfficerView: React.FC = () => {
                 <th className="px-5 py-3">Batch Details</th>
                 <th className="px-5 py-3">Training Centre</th>
                 <th className="px-5 py-3">Candidates</th>
-                <th className="px-5 py-3">Quorum Progress</th>
+                <th className="px-5 py-3">Status / Progress</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
-              {displayedBatches.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-slate-400">
-                    {activeTab === 'actionable'
-                      ? 'No batches currently require your review. All caught up!'
-                      : activeTab === 'voted'
-                      ? 'No batches currently waiting on a second officer.'
-                      : 'No batches pending in this district.'}
-                  </td>
-                </tr>
-              ) : (
-                displayedBatches.map((batch) => {
-                  const hasUserVoted = !!batch.quorumStatus?.hasOfficerApproved;
-                  const votes = batch.quorumStatus?.approvalsCount || 0;
+              {activeTab === 'actionable' ? (
+                actionableBatches.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-slate-400">
+                      No batches currently require your review. All caught up!
+                    </td>
+                  </tr>
+                ) : (
+                  actionableBatches.map((batch) => {
+                    const votes = batch.quorumStatus?.approvalsCount || 0;
 
-                  return (
-                    <tr key={batch.id} className="hover:bg-slate-50 transition">
-                      <td className="px-5 py-3.5">
-                        <div className="font-mono font-bold text-slate-900">{batch.batchNumber}</div>
-                        <div className="text-slate-500 text-[11px] mt-0.5">{batch.courseName}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="font-semibold text-slate-800">{batch.centre?.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">{batch.centre?.code}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="font-bold text-slate-900">{batch.candidateCount}</span>
-                        {batch.candidateCount >= 50 && (
-                          <span className="ml-2 inline-flex items-center px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 font-bold text-[10px]">
-                            ≥50 Scrutiny
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center space-x-2">
-                          <div className="flex space-x-1">
-                            <span className={`w-3 h-3 rounded-full ${votes >= 1 ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                            <span className={`w-3 h-3 rounded-full ${votes >= 2 ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    return (
+                      <tr key={batch.id} className="hover:bg-slate-50 transition">
+                        <td className="px-5 py-3.5">
+                          <div className="font-mono font-bold text-slate-900">{batch.batchNumber}</div>
+                          <div className="text-slate-500 text-[11px] mt-0.5">{batch.courseName}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="font-semibold text-slate-800">{batch.centre?.name}</div>
+                          <div className="text-[11px] text-slate-400 font-mono">{batch.centre?.code}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-bold text-slate-900">{batch.candidateCount}</span>
+                          {batch.candidateCount >= 50 && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 font-bold text-[10px]">
+                              ≥50 Scrutiny
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <span className={`w-3 h-3 rounded-full ${votes >= 1 ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                              <span className={`w-3 h-3 rounded-full ${votes >= 2 ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            </div>
+                            <span className="font-semibold text-[11px]">
+                              {votes} of 2 Votes
+                            </span>
                           </div>
-                          <span className="font-semibold text-[11px]">
-                            {votes} of 2 Votes
-                          </span>
-                        </div>
-                        {hasUserVoted && (
-                          <div className="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center space-x-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>Approved by you (Waiting for Officer 2)</span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right space-x-2">
+                          <button
+                            onClick={() => handleApprove(batch.id)}
+                            disabled={actionLoading === batch.id}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold text-xs shadow-sm inline-flex items-center space-x-1"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Approve</span>
+                          </button>
+                          <button
+                            onClick={() => setReturnBatchId(batch.id)}
+                            disabled={actionLoading === batch.id}
+                            className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs shadow-sm inline-flex items-center space-x-1"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Return</span>
+                          </button>
+                          <button
+                            onClick={() => handleReject(batch.id)}
+                            disabled={actionLoading === batch.id}
+                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-red-50 text-red-600 font-semibold text-xs border border-red-200 shadow-sm"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )
+              ) : (
+                /* APPROVED BY ME TAB */
+                approvedBatches.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-slate-400">
+                      You have not approved any batches yet.
+                    </td>
+                  </tr>
+                ) : (
+                  approvedBatches.map((batch) => {
+                    const isStillDistrictPending = batch.status === 'DISTRICT_PENDING';
+
+                    return (
+                      <tr key={batch.id} className="hover:bg-slate-50 transition">
+                        <td className="px-5 py-3.5">
+                          <div className="font-mono font-bold text-slate-900">{batch.batchNumber}</div>
+                          <div className="text-slate-500 text-[11px] mt-0.5">{batch.courseName}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="font-semibold text-slate-800">{batch.centre?.name}</div>
+                          <div className="text-[11px] text-slate-400 font-mono">{batch.centre?.code}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-bold text-slate-900">{batch.candidateCount}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              <Check className="w-3 h-3 text-emerald-600 mr-1" />
+                              Approved by You
+                            </span>
+                            {isStillDistrictPending ? (
+                              <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold">
+                                Waiting for 2nd Officer
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 font-semibold">
+                                {batch.status}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-right space-x-2">
-                        {hasUserVoted ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-slate-100 text-slate-600 font-medium text-[11px] border border-slate-200">
-                            <Clock className="w-3 h-3 text-slate-400" />
-                            <span>Awaiting 2nd Officer</span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <span className="text-slate-400 text-[11px] font-medium">
+                            Vote Recorded
                           </span>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleApprove(batch.id)}
-                              disabled={actionLoading === batch.id}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold text-xs shadow-sm inline-flex items-center space-x-1"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Approve</span>
-                            </button>
-                            <button
-                              onClick={() => setReturnBatchId(batch.id)}
-                              disabled={actionLoading === batch.id}
-                              className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-semibold text-xs shadow-sm inline-flex items-center space-x-1"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Return</span>
-                            </button>
-                            <button
-                              onClick={() => handleReject(batch.id)}
-                              disabled={actionLoading === batch.id}
-                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-red-50 text-red-600 font-semibold text-xs border border-red-200 shadow-sm"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
+                        </td>
+                      </tr>
+                    );
+                  })
+                )
               )}
             </tbody>
           </table>

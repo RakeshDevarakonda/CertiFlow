@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import type { Batch } from '../types';
-import { Award, Clock, Ban, RefreshCw } from 'lucide-react';
+import { Award, Clock, Ban, RefreshCw, Check } from 'lucide-react';
 
 export const StateOfficeView: React.FC = () => {
   const [pendingBatches, setPendingBatches] = useState<Batch[]>([]);
+  const [approvedBatches, setApprovedBatches] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved'>('pending');
   const [stuckBatches, setStuckBatches] = useState<any[]>([]);
   const [outboxStats, setOutboxStats] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -18,13 +20,15 @@ export const StateOfficeView: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [pendingRes, stuckRes, outboxRes] = await Promise.all([
+      const [pendingRes, approvedRes, stuckRes, outboxRes] = await Promise.all([
         api.get('/state/batches/pending'),
+        api.get('/state/batches/approved-by-me'),
         api.get('/state/sla/stuck-batches?hours=0'),
         api.get('/outbox/status')
       ]);
 
       setPendingBatches(pendingRes.data.data || []);
+      setApprovedBatches(approvedRes.data.data || []);
       setStuckBatches(stuckRes.data.data || []);
       setOutboxStats(outboxRes.data.data || null);
     } catch (err: any) {
@@ -137,14 +141,51 @@ export const StateOfficeView: React.FC = () => {
         </div>
       </div>
 
-      {/* Pending Final Approvals (Moment 3) */}
+      {/* Batches Management Tabs */}
+      <div className="flex space-x-2 border-b border-slate-200 pb-2 text-xs">
+        <button
+          onClick={() => setActiveTab('pending')}
+          className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center space-x-1.5 ${
+            activeTab === 'pending'
+              ? 'bg-indigo-700 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <span>Awaiting Final Approval</span>
+          <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeTab === 'pending' ? 'bg-indigo-900 text-white' : 'bg-slate-100 text-slate-700'}`}>
+            {pendingBatches.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('approved')}
+          className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center space-x-1.5 ${
+            activeTab === 'approved'
+              ? 'bg-indigo-700 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <span>Approved By Me</span>
+          <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeTab === 'approved' ? 'bg-indigo-900 text-white' : 'bg-slate-100 text-slate-700'}`}>
+            {approvedBatches.length}
+          </span>
+        </button>
+      </div>
+
+      {/* Batches Table (Moment 3) */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
           <h3 className="font-semibold text-slate-800 text-sm flex items-center space-x-2">
             <Award className="w-4 h-4 text-indigo-600" />
-            <span>Batches Cleared for Final State Approval & Certificate Issuance (Moment 3)</span>
+            <span>
+              {activeTab === 'pending'
+                ? 'Batches Cleared for Final State Approval & Certificate Issuance (Moment 3)'
+                : 'Batches Approved by You (State Final Seal Granted)'}
+            </span>
           </h3>
-          <span className="text-xs text-slate-500 font-medium">{pendingBatches.length} Batches</span>
+          <span className="text-xs text-slate-500 font-medium">
+            {activeTab === 'pending' ? `${pendingBatches.length} Pending` : `${approvedBatches.length} Approved`}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -159,34 +200,62 @@ export const StateOfficeView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
-              {pendingBatches.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-slate-400">
-                    No batches currently awaiting state final approval.
-                  </td>
-                </tr>
-              ) : (
-                pendingBatches.map((batch) => (
-                  <tr key={batch.id} className="hover:bg-slate-50 transition">
-                    <td className="px-6 py-4 font-mono font-bold text-slate-900">{batch.batchNumber}</td>
-                    <td className="px-6 py-4 font-medium">{batch.courseName}</td>
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-slate-800">{batch.centre?.name}</div>
-                      <div className="text-[11px] text-slate-400">{batch.centre?.district}</div>
-                    </td>
-                    <td className="px-6 py-4 font-bold text-slate-900">{batch.candidateCount} students</td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleFinalApproval(batch.id)}
-                        disabled={approvingId === batch.id}
-                        className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm inline-flex items-center space-x-1.5"
-                      >
-                        <Award className="w-4 h-4" />
-                        <span>{approvingId === batch.id ? 'Issuing...' : 'Grant Final Approval & Issue'}</span>
-                      </button>
+              {activeTab === 'pending' ? (
+                pendingBatches.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-slate-400">
+                      No batches currently awaiting state final approval.
                     </td>
                   </tr>
-                ))
+                ) : (
+                  pendingBatches.map((batch) => (
+                    <tr key={batch.id} className="hover:bg-slate-50 transition">
+                      <td className="px-6 py-4 font-mono font-bold text-slate-900">{batch.batchNumber}</td>
+                      <td className="px-6 py-4 font-medium">{batch.courseName}</td>
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-slate-800">{batch.centre?.name}</div>
+                        <div className="text-[11px] text-slate-400">{batch.centre?.district}</div>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-900">{batch.candidateCount} students</td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => handleFinalApproval(batch.id)}
+                          disabled={approvingId === batch.id}
+                          className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm inline-flex items-center space-x-1.5"
+                        >
+                          <Award className="w-4 h-4" />
+                          <span>{approvingId === batch.id ? 'Issuing...' : 'Grant Final Approval & Issue'}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )
+              ) : (
+                approvedBatches.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-slate-400">
+                      You haven't approved any batches yet.
+                    </td>
+                  </tr>
+                ) : (
+                  approvedBatches.map((batch) => (
+                    <tr key={batch.id} className="hover:bg-slate-50 transition">
+                      <td className="px-6 py-4 font-mono font-bold text-slate-900">{batch.batchNumber}</td>
+                      <td className="px-6 py-4 font-medium">{batch.courseName}</td>
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-slate-800">{batch.centre?.name}</div>
+                        <div className="text-[11px] text-slate-400">{batch.centre?.district}</div>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-900">{batch.candidateCount} students</td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <Check className="w-3 h-3" />
+                          <span>Approved & Issued</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )
               )}
             </tbody>
           </table>

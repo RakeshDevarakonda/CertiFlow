@@ -73,6 +73,71 @@ export class QualityService {
     };
   }
 
+  // 1.1 GET /api/v1/quality/batches/approved-by-me - Batches approved by Quality officer
+  async getApprovedByMeBatches(officerId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const whereClause = {
+      approvals: {
+        some: {
+          officerId,
+          stage: ApprovalStage.QUALITY,
+          action: ApprovalAction.APPROVED
+        }
+      }
+    };
+
+    const [total, batches] = await prisma.$transaction([
+      prisma.batch.count({ where: whereClause }),
+      prisma.batch.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          centre: {
+            select: { id: true, name: true, code: true, district: true, state: true }
+          },
+          approvals: {
+            include: {
+              officer: {
+                select: { id: true, name: true, email: true, role: true }
+              }
+            },
+            orderBy: { createdAt: 'desc' }
+          }
+        }
+      })
+    ]);
+
+    const formattedBatches = batches.map((batch) => ({
+      id: batch.id,
+      batchNumber: batch.batchNumber,
+      courseName: batch.courseName,
+      status: batch.status,
+      candidateCount: batch.candidateCount,
+      approvalRound: batch.approvalRound,
+      submittedAt: batch.submittedAt,
+      lastActivityAt: batch.lastActivityAt,
+      centre: batch.centre,
+      approvals: batch.approvals
+    }));
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      batches: formattedBatches,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    };
+  }
+
   // 2. Decision Engine (APPROVED, RETURNED, REJECTED)
   async recordDecision(
     batchId: string,

@@ -82,6 +82,81 @@ export class StateService {
     };
   }
 
+  // 1.1 GET /api/v1/state/batches/approved-by-me - Batches approved by State Office
+  async getApprovedByMeBatches(officerId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const whereClause = {
+      approvals: {
+        some: {
+          officerId,
+          stage: ApprovalStage.STATE,
+          action: ApprovalAction.APPROVED
+        }
+      }
+    };
+
+    const [total, batches] = await prisma.$transaction([
+      prisma.batch.count({ where: whereClause }),
+      prisma.batch.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          centre: {
+            select: { id: true, name: true, code: true, district: true, state: true }
+          },
+          approvals: {
+            include: {
+              officer: {
+                select: { id: true, name: true, email: true, role: true, district: true }
+              }
+            },
+            orderBy: { createdAt: 'desc' }
+          }
+        }
+      })
+    ]);
+
+    const formattedBatches = batches.map((batch) => {
+      const stateApproval = batch.approvals.find(
+        (a) => a.officerId === officerId && a.stage === ApprovalStage.STATE && a.action === ApprovalAction.APPROVED
+      );
+
+      return {
+        id: batch.id,
+        batchNumber: batch.batchNumber,
+        courseName: batch.courseName,
+        status: batch.status,
+        candidateCount: batch.candidateCount,
+        approvalRound: batch.approvalRound,
+        submittedAt: batch.submittedAt,
+        lastActivityAt: batch.lastActivityAt,
+        centre: batch.centre,
+        myApproval: stateApproval ? {
+          action: stateApproval.action,
+          createdAt: stateApproval.createdAt,
+          comment: stateApproval.comment
+        } : null
+      };
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      batches: formattedBatches,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    };
+  }
+
   // 2. Final Approval & Certificate Issuance Engine (Moment 3)
   async approveBatchAndIssueCertificates(
     batchId: string,

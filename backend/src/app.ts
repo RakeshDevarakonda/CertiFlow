@@ -2,7 +2,6 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { isCelebrateError } from 'celebrate';
-import { config } from './config/env.js';
 import { prisma } from './config/db.js';
 import authRoutes from './routes/auth.routes.js';
 import batchRoutes from './routes/batch.routes.js';

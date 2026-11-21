@@ -90,6 +90,87 @@ export class DistrictService {
     };
   }
 
+  // 1.1 GET all batches approved by this officer (history + currently in progress)
+  async getApprovedByMeBatches(
+    officerId: string,
+    page: number = 1,
+    limit: number = 20
+  ) {
+    const skip = (page - 1) * limit;
+
+    const whereClause = {
+      approvals: {
+        some: {
+          officerId,
+          stage: ApprovalStage.DISTRICT,
+          action: ApprovalAction.APPROVED
+        }
+      }
+    };
+
+    const [total, batches] = await prisma.$transaction([
+      prisma.batch.count({ where: whereClause }),
+      prisma.batch.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          centre: {
+            select: { id: true, name: true, code: true, district: true }
+          },
+          approvals: {
+            where: { stage: ApprovalStage.DISTRICT },
+            include: {
+              officer: {
+                select: { id: true, name: true, email: true }
+              }
+            }
+          }
+        }
+      })
+    ]);
+
+    const formattedBatches = batches.map((batch) => {
+      const currentRoundApprovals = batch.approvals.filter(
+        (a) => a.approvalRound === batch.approvalRound && a.action === ApprovalAction.APPROVED
+      );
+
+      return {
+        id: batch.id,
+        batchNumber: batch.batchNumber,
+        courseName: batch.courseName,
+        candidateCount: batch.candidateCount,
+        status: batch.status,
+        approvalRound: batch.approvalRound,
+        submittedAt: batch.submittedAt,
+        lastActivityAt: batch.lastActivityAt,
+        centre: batch.centre,
+        quorumStatus: {
+          approvalsCount: currentRoundApprovals.length,
+          quorumRequired: DISTRICT_QUORUM_REQUIRED,
+          isQuorumReached: currentRoundApprovals.length >= DISTRICT_QUORUM_REQUIRED,
+          hasOfficerApproved: true
+        },
+        approvingOfficers: currentRoundApprovals.map((a) => a.officer.name)
+      };
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      batches: formattedBatches,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    };
+  }
+
   // 2. POST /api/v1/district/batches/:id/decision - Unified Decision Engine (APPROVED, RETURNED, REJECTED)
   async recordDecision(
     batchId: string,

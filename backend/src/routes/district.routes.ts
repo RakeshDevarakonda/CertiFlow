@@ -22,6 +22,13 @@ router.get(
   (req, res) => districtController.getPendingBatches(req, res)
 );
 
+// 1.1 GET /api/v1/district/batches/approved-by-me - List all batches approved by this officer
+router.get(
+  '/batches/approved-by-me',
+  paginationQueryValidator,
+  (req, res) => districtController.getApprovedByMeBatches(req, res)
+);
+
 // 2. POST /api/v1/district/batches/:id/approve - Approve batch (Quorum of 2)
 router.post(
   '/batches/:id/approve',
