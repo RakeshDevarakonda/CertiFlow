@@ -13,7 +13,8 @@ const getRequiredEnv = (key: string): string => {
 export const config = {
   port: Number(getRequiredEnv('PORT')),
   corsOrigin: getRequiredEnv('CORS_ORIGIN'),
-  databaseUrl: getRequiredEnv('DATABASE_URL')
+  databaseUrl: getRequiredEnv('DATABASE_URL'),
+  jwtSecret: getRequiredEnv('JWT_SECRET')
 } as const;
 
 export type Config = typeof config;

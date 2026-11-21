@@ -1,7 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { errors } from 'celebrate';
 import { config } from './config/env.js';
 import { prisma } from './config/db.js';
+import authRoutes from './routes/auth.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -42,6 +44,9 @@ export const createApp = () => {
     }
   });
 
+  // Auth Routes (REST versioned)
+  app.use('/api/v1/auth', authRoutes);
+
   // Root API route
   app.get('/api/v1', (_req: Request, res: Response) => {
     res.json({
@@ -57,6 +62,9 @@ export const createApp = () => {
       message: 'Endpoint not found'
     });
   });
+
+  // Celebrate / Joi validation error handler
+  app.use(errors());
 
   // Global Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
