@@ -4,8 +4,7 @@ import type { RootState, AppDispatch } from '../store';
 import { switchPersona, logout } from '../store/authSlice';
 import { DEMO_PERSONAS } from '../types';
 import type { DemoPersona } from '../types';
-import { ShieldCheck, UserCheck, RefreshCw, LogOut, Award } from 'lucide-react';
-import { api } from '../services/api';
+import { ShieldCheck, UserCheck, LogOut, Award } from 'lucide-react';
 
 interface Props {
   currentTab: 'portal' | 'registry';
@@ -15,19 +14,6 @@ interface Props {
 export const Navbar: React.FC<Props> = ({ currentTab, onTabChange }) => {
   const dispatch = useDispatch<AppDispatch>();
   const { activePersona, user, loading } = useSelector((state: RootState) => state.auth);
-  const [processingOutbox, setProcessingOutbox] = React.useState(false);
-
-  const handleProcessOutbox = async () => {
-    try {
-      setProcessingOutbox(true);
-      await api.post('/outbox/process', { batchSize: 50 });
-      window.dispatchEvent(new CustomEvent('outbox-processed'));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setProcessingOutbox(false);
-    }
-  };
 
   return (
     <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
@@ -69,7 +55,7 @@ export const Navbar: React.FC<Props> = ({ currentTab, onTabChange }) => {
             </button>
           </div>
 
-          {/* User Info & Outbox & Sign Out */}
+          {/* User Info & Sign Out */}
           <div className="flex items-center space-x-3">
             {user && (
               <div className="text-right hidden sm:block">
@@ -77,16 +63,6 @@ export const Navbar: React.FC<Props> = ({ currentTab, onTabChange }) => {
                 <div className="text-[10px] text-slate-500">{user.role} {user.district ? `(${user.district})` : ''}</div>
               </div>
             )}
-
-            <button
-              onClick={handleProcessOutbox}
-              disabled={processingOutbox}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700 border border-slate-300 transition"
-              title="Process background outbox validation & WhatsApp dispatch"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${processingOutbox ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
-              <span>{processingOutbox ? 'Syncing...' : 'Sync Outbox'}</span>
-            </button>
 
             <button
               onClick={() => dispatch(logout())}
