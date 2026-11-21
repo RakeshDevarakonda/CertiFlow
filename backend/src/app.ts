@@ -1,9 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { errors } from 'celebrate';
+import { isCelebrateError } from 'celebrate';
 import { config } from './config/env.js';
 import { prisma } from './config/db.js';
 import authRoutes from './routes/auth.routes.js';
+import batchRoutes from './routes/batch.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -44,8 +45,9 @@ export const createApp = () => {
     }
   });
 
-  // Auth Routes (REST versioned)
+  // REST API Routes
   app.use('/api/v1/auth', authRoutes);
+  app.use('/api/v1/batches', batchRoutes);
 
   // Root API route
   app.get('/api/v1', (_req: Request, res: Response) => {
@@ -63,8 +65,22 @@ export const createApp = () => {
     });
   });
 
-  // Celebrate / Joi validation error handler
-  app.use(errors());
+  // Custom Celebrate / Joi validation error formatter
+  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (isCelebrateError(err)) {
+      const errorDetails: string[] = [];
+      for (const [_segment, joiError] of err.details.entries()) {
+        joiError.details.forEach((d) => errorDetails.push(d.message));
+      }
+      res.status(400).json({
+        success: false,
+        message: errorDetails[0] || 'Validation failed.',
+        errors: errorDetails
+      });
+      return;
+    }
+    next(err);
+  });
 
   // Global Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
