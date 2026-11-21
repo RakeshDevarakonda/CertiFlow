@@ -116,17 +116,19 @@ export const StateOfficeView: React.FC = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Awaiting Final Seal</div>
           <div className="text-2xl font-bold text-slate-900 mt-1">{pendingBatches.length}</div>
-          <div className="text-[11px] text-indigo-600 font-medium mt-1">Ready for Issuance</div>
+          <div className="text-[11px] text-blue-600 font-medium mt-1">Ready for Issuance</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Outbox Pending Queue</div>
           <div className="text-2xl font-bold text-amber-600 mt-1">{outboxStats?.pending || 0}</div>
-          <div className="text-[11px] text-slate-500 font-medium mt-1">Async Delivery Events</div>
+          <div className="text-[11px] text-slate-500 font-medium mt-1">Async Queue Events</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">WhatsApp Dispatched</div>
-          <div className="text-2xl font-bold text-emerald-600 mt-1">{outboxStats?.published || 0}</div>
-          <div className="text-[11px] text-emerald-600 font-medium mt-1">Delivered via Meta Cloud API</div>
+          <div className="text-2xl font-bold text-emerald-600 mt-1">
+            {outboxStats?.breakdownByEvent?.find((e: any) => e.eventType === 'CERTIFICATE_ISSUED' && e.status === 'PUBLISHED')?.count || 0}
+          </div>
+          <div className="text-[11px] text-emerald-600 font-medium mt-1">Delivered via Meta WhatsApp Cloud API</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">SLA Inactivity Alerts</div>

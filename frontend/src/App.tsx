@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from './store';
 import { setPublicView, checkAuthStatus } from './store/authSlice';
@@ -9,10 +9,12 @@ import { DistrictOfficerView } from './views/DistrictOfficerView';
 import { QualityOfficerView } from './views/QualityOfficerView';
 import { StateOfficeView } from './views/StateOfficeView';
 import { PublicVerificationView } from './views/PublicVerificationView';
+import { CertificatesRegistryView } from './views/CertificatesRegistryView';
 
 export const App: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { activePersona, isAuthenticated, loading } = useSelector((state: RootState) => state.auth);
+  const [currentTab, setCurrentTab] = useState<'portal' | 'registry'>('portal');
 
   // Restore session from cookie / token on page mount / refresh
   useEffect(() => {
@@ -37,6 +39,10 @@ export const App: React.FC = () => {
   }
 
   const renderActiveView = () => {
+    if (currentTab === 'registry') {
+      return <CertificatesRegistryView />;
+    }
+
     switch (activePersona.role) {
       case 'TRAINING_CENTRE':
         return <TrainingCentreView />;
@@ -54,7 +60,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Navbar />
+      <Navbar currentTab={currentTab} onTabChange={setCurrentTab} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {renderActiveView()}
