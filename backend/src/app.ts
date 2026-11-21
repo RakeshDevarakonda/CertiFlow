@@ -1,0 +1,58 @@
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import { config } from './config/env.js';
+
+export const createApp = () => {
+  const app = express();
+
+  // Middlewares
+  app.use(cors({
+    origin: config.corsOrigin,
+    credentials: true
+  }));
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Request logger
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+
+  // Health check
+  app.get('/health', (_req: Request, res: Response) => {
+    res.status(200).json({
+      status: 'ok',
+      service: 'CertiFlow API',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+
+  // Root API route
+  app.get('/api/v1', (_req: Request, res: Response) => {
+    res.json({
+      message: 'Welcome to CertiFlow Skilling Certificate Issuance Platform API',
+      version: '1.0.0'
+    });
+  });
+
+  // 404 handler
+  app.use((_req: Request, res: Response) => {
+    res.status(404).json({
+      success: false,
+      message: 'Endpoint not found'
+    });
+  });
+
+  // Global Error handler
+  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Unhandled Application Error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal Server Error'
+    });
+  });
+
+  return app;
+};
