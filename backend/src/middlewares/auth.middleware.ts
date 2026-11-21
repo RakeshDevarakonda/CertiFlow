@@ -21,17 +21,23 @@ declare global {
 }
 
 export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
-  const authHeader = req.headers.authorization;
+  // Check Authorization Bearer header first, then fallback to cookie
+  let token: string | undefined;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.cookies && req.cookies.certiflow_token) {
+    token = req.cookies.certiflow_token;
+  }
+
+  if (!token) {
     res.status(401).json({
       success: false,
-      message: 'Authentication required. No token provided.'
+      message: 'Authentication required. No token provided in header or cookie.'
     });
     return;
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as AuthUserPayload;

@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { isCelebrateError } from 'celebrate';
 import { config } from './config/env.js';
 import { prisma } from './config/db.js';
@@ -18,9 +19,13 @@ export const createApp = () => {
 
   // Middlewares
   app.use(cors({
-    origin: config.corsOrigin,
+    origin: (origin, callback) => {
+      // Allow localhost frontend or tools
+      callback(null, origin || true);
+    },
     credentials: true
   }));
+  app.use(cookieParser());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 

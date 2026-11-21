@@ -16,6 +16,14 @@ export class AuthController {
         district
       });
 
+      // Set cookie (HTTP-only)
+      res.cookie('certiflow_token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
       res.status(201).json({
         success: true,
         message: 'Training centre registered successfully.',
@@ -34,6 +42,14 @@ export class AuthController {
       const { email, password } = req.body;
 
       const result = await authService.login({ email, password });
+
+      // Set cookie (HTTP-only)
+      res.cookie('certiflow_token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
 
       res.status(200).json({
         success: true,
@@ -70,6 +86,14 @@ export class AuthController {
         message: error.message || 'User not found.'
       });
     }
+  }
+
+  async logout(_req: Request, res: Response): Promise<void> {
+    res.clearCookie('certiflow_token');
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully.'
+    });
   }
 }
 

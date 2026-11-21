@@ -8,6 +8,7 @@ const router = Router();
 // Public routes with Joi / Celebrate validation
 router.post('/signup', signupValidator, (req, res) => authController.signup(req, res));
 router.post('/login', loginValidator, (req, res) => authController.login(req, res));
+router.post('/logout', (req, res) => authController.logout(req, res));
 
 // Authenticated route
 router.get('/me', authenticate, (req, res) => authController.getMe(req, res));
