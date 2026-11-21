@@ -9,6 +9,7 @@ import districtRoutes from './routes/district.routes.js';
 import qualityRoutes from './routes/quality.routes.js';
 import stateRoutes from './routes/state.routes.js';
 import verifyRoutes from './routes/verify.routes.js';
+import certificateRoutes from './routes/certificate.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -56,6 +57,7 @@ export const createApp = () => {
   app.use('/api/v1/quality', qualityRoutes);
   app.use('/api/v1/state', stateRoutes);
   app.use('/api/v1/verify', verifyRoutes);
+  app.use('/api/v1/certificates', certificateRoutes);
 
   // Root API route
   app.get('/api/v1', (_req: Request, res: Response) => {
