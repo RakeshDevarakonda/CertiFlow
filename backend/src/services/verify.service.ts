@@ -1,5 +1,6 @@
 import { CertificateStatus } from '@prisma/client';
 import { prisma } from '../config/db.js';
+import { redis } from '../config/redis.js';
 
 export interface PublicCertificateVerificationResult {
   valid: boolean;
@@ -26,8 +27,19 @@ export interface PublicCertificateVerificationResult {
 export class VerifyService {
   async verifyCertificate(code: string): Promise<PublicCertificateVerificationResult> {
     const normalizedCode = code.trim().toUpperCase();
+    const cacheKey = `cache:verify:${normalizedCode}`;
 
-    // Query Database directly on PostgreSQL unique index in real-time
+    // 1. Try Optional Redis Cache
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        // Fallback to DB
+      }
+    }
+
+    // 2. Query Database directly on PostgreSQL unique index
     const certificate = await prisma.certificate.findUnique({
       where: { verificationCode: normalizedCode },
       include: {
@@ -83,7 +95,16 @@ export class VerifyService {
       })
     };
 
+    // 3. Optional Redis Cache Write (TTL 300s, skips if redis is down)
+    await redis.set(cacheKey, JSON.stringify(result), 300);
+
     return result;
+  }
+
+  // Instant invalidation helper when a certificate is cancelled
+  async invalidateCache(verificationCode: string): Promise<void> {
+    const cacheKey = `cache:verify:${verificationCode.trim().toUpperCase()}`;
+    await redis.del(cacheKey);
   }
 }
 

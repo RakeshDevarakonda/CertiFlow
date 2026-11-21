@@ -3,7 +3,7 @@ import {
   ApprovalStage,
   ApprovalAction,
   CertificateStatus,
-  DeliveryStatus
+  OutboxStatus
 } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { CertificateGenerator } from '../utils/certificate.generator.js';
@@ -162,14 +162,32 @@ export class StateService {
             verificationCode: certData.verificationCode,
             pdfStoragePath: certData.pdfStoragePath,
             pdfHash: certData.pdfHash,
-            status: CertificateStatus.ISSUED,
-            deliveryLogs: {
-              create: {
-                recipientPhone: candidate.phoneNumber,
-                channel: 'WHATSAPP',
-                status: DeliveryStatus.QUEUED
-              }
-            }
+            status: CertificateStatus.ISSUED
+          }
+        });
+
+        // ---------------------------------------------------------
+        // TRANSACTIONAL OUTBOX: Atomically record delivery event
+        // Strict Idempotency Key ensures no duplicate event can ever be queued
+        // ---------------------------------------------------------
+        const idempotencyKey = `WHATSAPP_DELIVERY:${cert.id}`;
+
+        await tx.outbox.create({
+          data: {
+            idempotencyKey,
+            aggregateType: 'CERTIFICATE',
+            aggregateId: cert.id,
+            eventType: 'CERTIFICATE_ISSUED',
+            payload: {
+              certificateId: cert.id,
+              certificateNumber: cert.certificateNumber,
+              verificationCode: cert.verificationCode,
+              candidateName: candidate.fullName,
+              phoneNumber: candidate.phoneNumber,
+              courseName: batch.courseName,
+              centreName: batch.centre.name
+            },
+            status: OutboxStatus.PENDING
           }
         });
 
@@ -385,6 +403,14 @@ export class StateService {
         message: `Certificate ${cert.certificateNumber} has been officially cancelled.`
       };
     });
+
+    // Invalidate public verification cache if Redis is configured
+    try {
+      const { verifyService } = await import('./verify.service.js');
+      await verifyService.invalidateCache(result.certificate.verificationCode);
+    } catch {
+      // Ignore cache invalidation failures
+    }
 
     return result;
   }

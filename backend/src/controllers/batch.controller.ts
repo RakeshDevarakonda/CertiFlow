@@ -33,9 +33,9 @@ export class BatchController {
         userId
       );
 
-      res.status(201).json({
+      res.status(202).json({
         success: true,
-        message: `Batch ${result.batch.batchNumber} created with ${result.totalCandidates} candidates and submitted for district review.`,
+        message: result.message,
         data: result
       });
     } catch (error: any) {
@@ -117,7 +117,7 @@ export class BatchController {
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
 
-      const result = await batchService.getCandidates(id, centreId, page, limit);
+      const result = await batchService.getCandidates(id, page, limit, centreId);
 
       res.status(200).json({
         success: true,

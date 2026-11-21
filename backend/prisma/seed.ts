@@ -149,7 +149,27 @@ async function main() {
     }
   });
 
-  console.log('✅ Seed complete: 6 default demo accounts created.');
+  // 7. Seed Nagpur Officer (For District Isolation / Boundary tests)
+  await prisma.user.upsert({
+    where: { email: 'nagpur.officer@certiflow.com' },
+    update: {
+      name: 'Nagpur Officer',
+      role: Role.DISTRICT_OFFICER,
+      state: STATE_NAME,
+      district: 'Nagpur',
+      passwordHash
+    },
+    create: {
+      email: 'nagpur.officer@certiflow.com',
+      name: 'Nagpur Officer',
+      role: Role.DISTRICT_OFFICER,
+      state: STATE_NAME,
+      district: 'Nagpur',
+      passwordHash
+    }
+  });
+
+  console.log('✅ Seed complete: 7 default demo accounts created.');
   console.log('🔑 Default password for all demo accounts: Password@123');
 }
 

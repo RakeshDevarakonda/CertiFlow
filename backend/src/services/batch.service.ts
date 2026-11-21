@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
-import { BatchStatus } from '@prisma/client';
+import { BatchStatus, OutboxStatus } from '@prisma/client';
 import { prisma } from '../config/db.js';
+import { outboxWorker } from './outbox.service.js';
 
 export interface RowValidationError {
   row: number;
@@ -25,8 +26,8 @@ export class BatchService {
     return `BATCH-${new Date().getFullYear()}-${centreCode}-${randomSuffix}`;
   }
 
-  // Parse and validate spreadsheet rows atomically (Moment 1 safety)
-  parseAndValidateSpreadsheet(fileBuffer: Buffer): { fullName: string; phoneNumber: string; email?: string }[] {
+  // Parse raw spreadsheet rows into JSON
+  parseSpreadsheetRaw(fileBuffer: Buffer): any[] {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     if (!sheetName) {
@@ -40,6 +41,11 @@ export class BatchService {
       throw new Error('The uploaded spreadsheet is empty. Please include candidate rows.');
     }
 
+    return rawRows;
+  }
+
+  // Row-level validator (Moment 1 safety)
+  validateRows(rawRows: any[]): { valid: { fullName: string; phoneNumber: string; email?: string }[]; errors: RowValidationError[] } {
     const errors: RowValidationError[] = [];
     const validCandidates: { fullName: string; phoneNumber: string; email?: string }[] = [];
     const seenPhonesInFile = new Set<string>();
@@ -77,7 +83,7 @@ export class BatchService {
           row: rowNumber,
           field: 'phoneNumber',
           value: phone,
-          message: 'Phone number is required.'
+          message: 'Candidate phone number is required.'
         });
       } else if (!phoneRegex.test(cleanPhone)) {
         errors.push({
@@ -87,22 +93,17 @@ export class BatchService {
           message: 'Invalid Indian phone number format (must be 10 digits starting with 6-9).'
         });
       } else {
-        const standardizedPhone = cleanPhone.startsWith('+91')
-          ? cleanPhone
-          : cleanPhone.startsWith('91') && cleanPhone.length === 12
-          ? `+${cleanPhone}`
-          : `+91${cleanPhone}`;
-
-        if (seenPhonesInFile.has(standardizedPhone)) {
+        const standardPhone = cleanPhone.length === 10 ? `+91${cleanPhone}` : (cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`);
+        if (seenPhonesInFile.has(standardPhone)) {
           errors.push({
             row: rowNumber,
             field: 'phoneNumber',
             value: phone,
-            message: `Duplicate phone number within the spreadsheet: ${phone}`
+            message: `Duplicate phone number "${phone}" found in file.`
           });
         } else {
-          seenPhonesInFile.add(standardizedPhone);
-          phone = standardizedPhone;
+          seenPhonesInFile.add(standardPhone);
+          phone = standardPhone;
         }
       }
 
@@ -124,14 +125,10 @@ export class BatchService {
       }
     });
 
-    if (errors.length > 0) {
-      throw new BatchUploadValidationError(errors);
-    }
-
-    return validCandidates;
+    return { valid: validCandidates, errors };
   }
 
-  // 1. POST /api/v1/batches - Create batch + candidates and submit for review
+  // 1. POST /api/v1/batches - Asynchronous Upload via Transactional Outbox
   async createAndSubmitBatch(centreId: string, courseName: string, fileBuffer: Buffer, actorId: string) {
     const centre = await prisma.trainingCentre.findUnique({
       where: { id: centreId }
@@ -141,30 +138,40 @@ export class BatchService {
       throw new Error('Training centre not found.');
     }
 
-    const validCandidates = this.parseAndValidateSpreadsheet(fileBuffer);
+    const rawRows = this.parseSpreadsheetRaw(fileBuffer);
     const batchNumber = this.generateBatchNumber(centre.code);
 
+    // Atomically create batch in VALIDATING status + enqueue Outbox validation job
     const batch = await prisma.$transaction(async (tx) => {
       const created = await tx.batch.create({
         data: {
           batchNumber,
           centreId,
           courseName: courseName.trim(),
-          status: BatchStatus.DISTRICT_PENDING,
-          candidateCount: validCandidates.length,
+          status: BatchStatus.VALIDATING,
+          candidateCount: rawRows.length,
           approvalRound: 1,
           submittedAt: new Date(),
           lastActivityAt: new Date()
         }
       });
 
-      await tx.candidate.createMany({
-        data: validCandidates.map(c => ({
-          batchId: created.id,
-          fullName: c.fullName,
-          phoneNumber: c.phoneNumber,
-          email: c.email || null
-        }))
+      // Transactional Outbox Job: BATCH_VALIDATION
+      const idempotencyKey = `BATCH_VALIDATION:${created.id}`;
+
+      await tx.outbox.create({
+        data: {
+          idempotencyKey,
+          aggregateType: 'BATCH',
+          aggregateId: created.id,
+          eventType: 'BATCH_VALIDATION',
+          payload: {
+            batchId: created.id,
+            actorId,
+            rawRows
+          },
+          status: OutboxStatus.PENDING
+        }
       });
 
       await tx.auditLog.create({
@@ -172,12 +179,12 @@ export class BatchService {
           entityType: 'BATCH',
           entityId: created.id,
           actorId,
-          action: 'BATCH_CREATED_AND_SUBMITTED',
+          action: 'BATCH_UPLOADED_FOR_ASYNC_VALIDATION',
           metadata: {
             batchNumber,
             courseName: created.courseName,
-            status: BatchStatus.DISTRICT_PENDING,
-            candidateCount: validCandidates.length
+            status: BatchStatus.VALIDATING,
+            totalRows: rawRows.length
           }
         }
       });
@@ -185,9 +192,15 @@ export class BatchService {
       return created;
     });
 
+    // Asynchronously trigger outbox worker to process validation without blocking HTTP response
+    setImmediate(() => {
+      outboxWorker.pollAndProcess().catch(console.error);
+    });
+
     return {
       batch,
-      totalCandidates: validCandidates.length
+      totalRows: rawRows.length,
+      message: `Batch ${batch.batchNumber} received. Asynchronous outbox worker validating ${rawRows.length} candidates.`
     };
   }
 
@@ -207,9 +220,13 @@ export class BatchService {
             select: { candidates: true }
           },
           approvals: {
-            orderBy: { createdAt: 'desc' },
-            take: 5,
-            include: {
+            select: {
+              id: true,
+              stage: true,
+              action: true,
+              approvalRound: true,
+              comment: true,
+              createdAt: true,
               officer: {
                 select: { id: true, name: true, role: true }
               }
@@ -234,49 +251,50 @@ export class BatchService {
     };
   }
 
-  // 3. GET /api/v1/batches/:id - Get batch details, candidates, and approvals history
+  // 3. GET /api/v1/batches/:id - Get batch details
   async getBatchById(batchId: string, centreId?: string) {
-    const batch = await prisma.batch.findUnique({
-      where: { id: batchId },
+    const whereClause: any = { id: batchId };
+    if (centreId) {
+      whereClause.centreId = centreId;
+    }
+
+    const batch = await prisma.batch.findFirst({
+      where: whereClause,
       include: {
-        centre: true,
+        centre: {
+          select: { id: true, name: true, code: true, district: true, state: true }
+        },
         candidates: {
-          orderBy: { createdAt: 'asc' }
+          take: 10,
+          select: { id: true, fullName: true, phoneNumber: true, email: true }
         },
         approvals: {
-          orderBy: { createdAt: 'asc' },
           include: {
             officer: {
               select: { id: true, name: true, role: true, district: true }
             }
-          }
+          },
+          orderBy: { createdAt: 'desc' }
         }
       }
     });
 
     if (!batch) {
-      throw new Error('Batch not found.');
-    }
-
-    if (centreId && batch.centreId !== centreId) {
-      throw new Error('Forbidden. You do not have permission to view this batch.');
+      throw new Error('Batch not found or unauthorized.');
     }
 
     return batch;
   }
 
-  // GET /api/v1/batches/:id/candidates - View paginated candidates of a batch
-  async getCandidates(batchId: string, centreId?: string, page: number = 1, limit: number = 10) {
-    const batch = await prisma.batch.findUnique({
-      where: { id: batchId }
-    });
-
-    if (!batch) {
-      throw new Error('Batch not found.');
-    }
-
-    if (centreId && batch.centreId !== centreId) {
-      throw new Error('Forbidden. You do not have permission to view this batch.');
+  // 4. GET /api/v1/batches/:id/candidates - Standalone candidate listing
+  async getCandidates(batchId: string, page: number = 1, limit: number = 20, centreId?: string) {
+    if (centreId) {
+      const owns = await prisma.batch.findFirst({
+        where: { id: batchId, centreId }
+      });
+      if (!owns) {
+        throw new Error('Forbidden. You do not own this batch.');
+      }
     }
 
     const skip = (page - 1) * limit;
@@ -287,7 +305,14 @@ export class BatchService {
         where: { batchId },
         skip,
         take: limit,
-        orderBy: { createdAt: 'asc' }
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          fullName: true,
+          phoneNumber: true,
+          email: true,
+          createdAt: true
+        }
       })
     ]);
 
@@ -306,7 +331,7 @@ export class BatchService {
     };
   }
 
-  // 4. PUT /api/v1/batches/:id - Fix and resubmit returned batch with corrected spreadsheet (Moment 6)
+  // 5. PUT /api/v1/batches/:id - Fix and resubmit returned batch (Moment 6)
   async resubmitBatch(
     batchId: string,
     centreId: string,
@@ -314,76 +339,87 @@ export class BatchService {
     fileBuffer?: Buffer,
     courseName?: string
   ) {
-    const batch = await prisma.batch.findUnique({
-      where: { id: batchId }
+    const existing = await prisma.batch.findFirst({
+      where: { id: batchId, centreId }
     });
 
-    if (!batch) {
-      throw new Error('Batch not found.');
+    if (!existing) {
+      throw new Error('Batch not found or does not belong to your centre.');
     }
 
-    if (batch.centreId !== centreId) {
-      throw new Error('Forbidden. You do not own this batch.');
+    if (existing.status !== BatchStatus.RETURNED && existing.status !== BatchStatus.VALIDATION_FAILED) {
+      throw new Error(
+        `Only RETURNED or VALIDATION_FAILED batches can be fixed and resubmitted. Current status: ${existing.status}`
+      );
     }
 
-    if (batch.status !== BatchStatus.RETURNED) {
-      throw new Error(`Only RETURNED batches can be resubmitted. Current status: ${batch.status}`);
-    }
-
-    // Parse new spreadsheet if provided
-    let newCandidates: { fullName: string; phoneNumber: string; email?: string }[] | null = null;
+    let rawRows: any[] | null = null;
     if (fileBuffer) {
-      newCandidates = this.parseAndValidateSpreadsheet(fileBuffer);
+      rawRows = this.parseSpreadsheetRaw(fileBuffer);
     }
 
-    const nextRound = batch.approvalRound + 1;
+    const result = await prisma.$transaction(async (tx) => {
+      const nextRound = existing.approvalRound + 1;
 
-    const updated = await prisma.$transaction(async (tx) => {
-      // Replace candidates if new file provided
-      if (newCandidates) {
-        await tx.candidate.deleteMany({ where: { batchId } });
-        await tx.candidate.createMany({
-          data: newCandidates.map(c => ({
-            batchId,
-            fullName: c.fullName,
-            phoneNumber: c.phoneNumber,
-            email: c.email || null
-          }))
-        });
-      }
-
-      const b = await tx.batch.update({
+      const updated = await tx.batch.update({
         where: { id: batchId },
         data: {
-          status: BatchStatus.DISTRICT_PENDING,
+          courseName: courseName ? courseName.trim() : existing.courseName,
+          status: fileBuffer ? BatchStatus.VALIDATING : BatchStatus.DISTRICT_PENDING,
+          candidateCount: rawRows ? rawRows.length : existing.candidateCount,
           approvalRound: nextRound,
-          courseName: courseName ? courseName.trim() : batch.courseName,
-          candidateCount: newCandidates ? newCandidates.length : batch.candidateCount,
+          validationErrors: undefined,
+          submittedAt: new Date(),
           lastActivityAt: new Date()
         }
       });
+
+      if (rawRows && fileBuffer) {
+        // Enqueue async validation job
+        const idempotencyKey = `BATCH_RESUBMIT_VALIDATION:${batchId}:ROUND_${nextRound}`;
+        await tx.outbox.create({
+          data: {
+            idempotencyKey,
+            aggregateType: 'BATCH',
+            aggregateId: batchId,
+            eventType: 'BATCH_VALIDATION',
+            payload: {
+              batchId,
+              actorId,
+              rawRows,
+              isResubmit: true
+            },
+            status: OutboxStatus.PENDING
+          }
+        });
+      }
 
       await tx.auditLog.create({
         data: {
           entityType: 'BATCH',
           entityId: batchId,
           actorId,
-          action: 'BATCH_RESUBMITTED',
+          action: 'BATCH_RESUBMITTED_FOR_REVIEW',
           metadata: {
-            status: BatchStatus.DISTRICT_PENDING,
-            approvalRound: nextRound,
-            candidatesReplaced: !!newCandidates,
-            candidateCount: b.candidateCount
+            batchNumber: existing.batchNumber,
+            newApprovalRound: nextRound,
+            hasNewSpreadsheet: !!fileBuffer
           }
         }
       });
 
-      return b;
+      return updated;
     });
 
+    if (fileBuffer) {
+      setImmediate(() => {
+        outboxWorker.pollAndProcess().catch(console.error);
+      });
+    }
+
     return {
-      batch: updated,
-      message: `Batch resubmitted for district review successfully (Round ${nextRound}).`
+      batch: result,
+      message: `Batch ${existing.batchNumber} resubmitted for Round ${result.approvalRound} review.`
     };
   }
 }

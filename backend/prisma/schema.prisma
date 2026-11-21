@@ -56,6 +56,8 @@ model TrainingCentre {
 // -------------------- 3. BATCHES --------------------
 
 enum BatchStatus {
+  VALIDATING
+  VALIDATION_FAILED
   DRAFT
   DISTRICT_PENDING
   QUALITY_PENDING
@@ -71,10 +73,11 @@ model Batch {
   centreId        String
   centre          TrainingCentre @relation(fields: [centreId], references: [id])
   courseName      String
-  status          BatchStatus    @default(DRAFT)
+  status          BatchStatus    @default(VALIDATING)
 
   candidateCount  Int            @default(0)
   approvalRound   Int            @default(1)
+  validationErrors Json?         // Stores row errors if VALIDATION_FAILED
 
   submittedAt     DateTime?
   lastActivityAt  DateTime       @default(now())
@@ -231,4 +234,34 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// -------------------- 9. TRANSACTIONAL OUTBOX --------------------
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+model Outbox {
+  id              String       @id @default(uuid())
+  idempotencyKey  String       @unique // e.g. "WHATSAPP_DELIVERY:CERT-UUID" - Strict uniqueness guard
+  aggregateType   String       // e.g. "CERTIFICATE"
+  aggregateId     String       // certificateId
+  eventType       String       // e.g. "CERTIFICATE_ISSUED"
+  payload         Json         // Certificate details, recipient phone, candidate name
+
+  status          OutboxStatus @default(PENDING)
+  retryCount      Int          @default(0)
+  nextRetryAt     DateTime     @default(now())
+  errorMessage    String?
+  publishedAt     DateTime?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@map("outbox")
 }

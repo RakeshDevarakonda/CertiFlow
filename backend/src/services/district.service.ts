@@ -1,5 +1,6 @@
 import { BatchStatus, ApprovalStage, ApprovalAction } from '@prisma/client';
 import { prisma } from '../config/db.js';
+import { redis } from '../config/redis.js';
 
 const DISTRICT_QUORUM_REQUIRED = 2;
 const QUALITY_REVIEW_THRESHOLD = 50; // Batches with >= 50 candidates require Quality Team scrutiny
@@ -97,12 +98,17 @@ export class DistrictService {
     action: ApprovalAction,
     comment?: string
   ) {
-    const result = await prisma.$transaction(async (tx) => {
-      // A. Query batch with centre details
-      const batch = await tx.batch.findUnique({
-        where: { id: batchId },
-        include: { centre: true }
-      });
+    // Acquire distributed lock on batchId to prevent concurrent race conditions (e.g. double vote at same millisecond)
+    const lockKey = `lock:batch:decision:${batchId}`;
+    const lockToken = await redis.acquireLock(lockKey, 5000);
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // A. Query batch with centre details
+        const batch = await tx.batch.findUnique({
+          where: { id: batchId },
+          include: { centre: true }
+        });
 
       if (!batch) {
         throw new Error('Batch not found.');
@@ -311,9 +317,14 @@ export class DistrictService {
       }
 
       throw new Error(`Invalid decision action: ${action}`);
-    });
+      });
 
-    return result;
+      return result;
+    } finally {
+      if (lockToken) {
+        await redis.releaseLock(lockKey, lockToken);
+      }
+    }
   }
 }
 
