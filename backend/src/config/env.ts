@@ -12,7 +12,8 @@ const getRequiredEnv = (key: string): string => {
 
 export const config = {
   port: Number(getRequiredEnv('PORT')),
-  corsOrigin: getRequiredEnv('CORS_ORIGIN')
+  corsOrigin: getRequiredEnv('CORS_ORIGIN'),
+  databaseUrl: getRequiredEnv('DATABASE_URL')
 } as const;
 
 export type Config = typeof config;

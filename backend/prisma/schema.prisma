@@ -1,0 +1,235 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------- USERS --------------------
+
+enum Role {
+  TRAINING_CENTRE
+  DISTRICT_OFFICER
+  QUALITY_OFFICER
+  STATE_OFFICE
+}
+
+model User {
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  passwordHash    String
+  role            Role
+  district        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trainingCentre  TrainingCentre?
+  approvals       BatchApproval[]
+  cancelledCerts  Certificate[]    @relation("CancelledBy")
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+// -------------------- TRAINING CENTRES --------------------
+
+model TrainingCentre {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  district  String
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  batches   Batch[]
+
+  @@map("training_centres")
+}
+
+// -------------------- BATCHES --------------------
+
+enum BatchStatus {
+  DRAFT
+  DISTRICT_PENDING
+  QUALITY_PENDING
+  STATE_PENDING
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+model Batch {
+  id              String         @id @default(uuid())
+  batchNumber     String         @unique
+  centreId        String
+  centre          TrainingCentre @relation(fields: [centreId], references: [id])
+  courseName      String
+  status          BatchStatus    @default(DRAFT)
+
+  candidateCount  Int            @default(0)
+  approvalRound   Int            @default(1)
+  version         Int            @default(1)
+
+  rejectionReason String?
+  submittedAt     DateTime?
+  lastActivityAt  DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  candidates      Candidate[]
+  approvals       BatchApproval[]
+  certificates    Certificate[]
+
+  @@index([status, lastActivityAt])
+  @@index([centreId, createdAt])
+  @@map("batches")
+}
+
+// -------------------- CANDIDATES --------------------
+
+model Candidate {
+  id             String       @id @default(uuid())
+  batchId        String
+  batch          Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  fullName       String
+  phoneNumber    String
+  email          String?
+  nationalIdHash String
+  grade          String
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  certificate    Certificate?
+
+  @@unique([batchId, phoneNumber])
+  @@index([batchId])
+  @@map("candidates")
+}
+
+// -------------------- APPROVALS --------------------
+
+enum ApprovalStage {
+  DISTRICT
+  QUALITY
+  STATE
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+model BatchApproval {
+  id            String         @id @default(uuid())
+  batchId       String
+  batch         Batch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  officerId     String
+  officer       User           @relation(fields: [officerId], references: [id])
+
+  stage         ApprovalStage
+  action        ApprovalAction
+  approvalRound Int            @default(1)
+  comment       String?
+
+  createdAt     DateTime       @default(now())
+
+  @@unique([batchId, officerId, stage, approvalRound])
+  @@index([batchId, stage, approvalRound])
+  @@map("batch_approvals")
+}
+
+// -------------------- CERTIFICATES --------------------
+
+enum CertificateStatus {
+  ISSUED
+  CANCELLED
+}
+
+model Certificate {
+  id                 String            @id @default(uuid())
+  certificateNumber  String            @unique
+
+  candidateId        String            @unique
+  candidate          Candidate         @relation(fields: [candidateId], references: [id])
+
+  batchId            String
+  batch              Batch             @relation(fields: [batchId], references: [id])
+
+  verificationCode   String            @unique
+  pdfStoragePath     String
+  pdfHash            String
+
+  status             CertificateStatus @default(ISSUED)
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?             @relation("CancelledBy", fields: [cancelledById], references: [id])
+
+  issuedAt           DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  deliveryLogs       DeliveryLog[]
+
+  @@index([batchId])
+  @@map("certificates")
+}
+
+// -------------------- DELIVERY LOGS --------------------
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model DeliveryLog {
+  id              String         @id @default(uuid())
+  certificateId   String
+  certificate     Certificate    @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  recipientPhone  String
+  channel         String         @default("WHATSAPP")
+  status          DeliveryStatus @default(QUEUED)
+
+  attemptCount    Int            @default(0)
+  providerMsgId   String?
+  errorMessage    String?
+  responsePayload Json?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([certificateId, status])
+  @@map("delivery_logs")
+}
+
+// -------------------- AUDIT LOGS --------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+
+  action     String
+  metadata   Json?
+  ipAddress  String?
+
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
