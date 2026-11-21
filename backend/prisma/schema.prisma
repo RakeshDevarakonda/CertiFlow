@@ -7,7 +7,7 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// -------------------- USERS --------------------
+// -------------------- 1. USERS --------------------
 
 enum Role {
   TRAINING_CENTRE
@@ -34,7 +34,7 @@ model User {
   @@map("users")
 }
 
-// -------------------- TRAINING CENTRES --------------------
+// -------------------- 2. TRAINING CENTRES --------------------
 
 model TrainingCentre {
   id        String   @id @default(uuid())
@@ -51,7 +51,7 @@ model TrainingCentre {
   @@map("training_centres")
 }
 
-// -------------------- BATCHES --------------------
+// -------------------- 3. BATCHES --------------------
 
 enum BatchStatus {
   DRAFT
@@ -73,7 +73,6 @@ model Batch {
 
   candidateCount  Int            @default(0)
   approvalRound   Int            @default(1)
-  version         Int            @default(1)
 
   rejectionReason String?
   submittedAt     DateTime?
@@ -90,30 +89,28 @@ model Batch {
   @@map("batches")
 }
 
-// -------------------- CANDIDATES --------------------
+// -------------------- 4. CANDIDATES --------------------
 
 model Candidate {
-  id             String       @id @default(uuid())
-  batchId        String
-  batch          Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
-  fullName       String
-  phoneNumber    String
-  email          String?
-  nationalIdHash String
-  grade          String
+  fullName    String
+  phoneNumber String
+  email       String?
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  certificate    Certificate?
+  certificate Certificate?
 
   @@unique([batchId, phoneNumber])
   @@index([batchId])
   @@map("candidates")
 }
 
-// -------------------- APPROVALS --------------------
+// -------------------- 5. APPROVALS --------------------
 
 enum ApprovalStage {
   DISTRICT
@@ -141,13 +138,14 @@ model BatchApproval {
   comment       String?
 
   createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@unique([batchId, officerId, stage, approvalRound])
   @@index([batchId, stage, approvalRound])
   @@map("batch_approvals")
 }
 
-// -------------------- CERTIFICATES --------------------
+// -------------------- 6. CERTIFICATES --------------------
 
 enum CertificateStatus {
   ISSUED
@@ -175,6 +173,7 @@ model Certificate {
   cancelledBy        User?             @relation("CancelledBy", fields: [cancelledById], references: [id])
 
   issuedAt           DateTime          @default(now())
+  createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
   deliveryLogs       DeliveryLog[]
@@ -183,7 +182,7 @@ model Certificate {
   @@map("certificates")
 }
 
-// -------------------- DELIVERY LOGS --------------------
+// -------------------- 7. DELIVERY LOGS --------------------
 
 enum DeliveryStatus {
   QUEUED
@@ -213,7 +212,7 @@ model DeliveryLog {
   @@map("delivery_logs")
 }
 
-// -------------------- AUDIT LOGS --------------------
+// -------------------- 8. AUDIT LOGS --------------------
 
 model AuditLog {
   id         String   @id @default(uuid())
@@ -228,6 +227,7 @@ model AuditLog {
   ipAddress  String?
 
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([entityType, entityId])
   @@index([createdAt])
