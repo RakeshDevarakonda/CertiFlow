@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from './config/env.js';
+import { prisma } from './config/db.js';
 
 export const createApp = () => {
   const app = express();
@@ -19,14 +20,26 @@ export const createApp = () => {
     next();
   });
 
-  // Health check
-  app.get('/health', (_req: Request, res: Response) => {
-    res.status(200).json({
-      status: 'ok',
-      service: 'CertiFlow API',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    });
+  // Health check with DB status
+  app.get('/health', async (_req: Request, res: Response) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.status(200).json({
+        status: 'ok',
+        service: 'CertiFlow API',
+        database: 'connected',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+      });
+    } catch {
+      res.status(503).json({
+        status: 'degraded',
+        service: 'CertiFlow API',
+        database: 'disconnected',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+      });
+    }
   });
 
   // Root API route
