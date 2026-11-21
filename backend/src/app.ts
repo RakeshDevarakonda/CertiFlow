@@ -106,7 +106,7 @@ export const createApp = () => {
     console.error('Unhandled Application Error:', err);
     res.status(500).json({
       success: false,
-      message: err.message || 'Internal Server Error'
+      message: 'Internal Server Error'
     });
   });
 
