@@ -17,19 +17,20 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role
-  district     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  passwordHash    String
+  role            Role
+  state           String?  // e.g. "Maharashtra"
+  district        String?  // e.g. "Pune" for district officers; null for statewide officers
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  trainingCentre TrainingCentre?
-  approvals      BatchApproval[]
-  cancelledCerts Certificate[]   @relation("CancelledBy")
-  auditLogs      AuditLog[]
+  trainingCentre  TrainingCentre?
+  approvals       BatchApproval[]
+  cancelledCerts  Certificate[]    @relation("CancelledBy")
+  auditLogs       AuditLog[]
 
   @@map("users")
 }
@@ -40,13 +41,14 @@ model TrainingCentre {
   id        String   @id @default(uuid())
   code      String   @unique
   name      String
-  district  String
+  state     String   // e.g. "Maharashtra"
+  district  String   // e.g. "Pune"
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  batches Batch[]
+  batches   Batch[]
 
   @@map("training_centres")
 }
@@ -64,24 +66,24 @@ enum BatchStatus {
 }
 
 model Batch {
-  id          String         @id @default(uuid())
-  batchNumber String         @unique
-  centreId    String
-  centre      TrainingCentre @relation(fields: [centreId], references: [id])
-  courseName  String
-  status      BatchStatus    @default(DRAFT)
+  id              String         @id @default(uuid())
+  batchNumber     String         @unique
+  centreId        String
+  centre          TrainingCentre @relation(fields: [centreId], references: [id])
+  courseName      String
+  status          BatchStatus    @default(DRAFT)
 
-  candidateCount Int @default(0)
-  approvalRound  Int @default(1)
+  candidateCount  Int            @default(0)
+  approvalRound   Int            @default(1)
 
-  submittedAt    DateTime?
-  lastActivityAt DateTime  @default(now())
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  submittedAt     DateTime?
+  lastActivityAt  DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  candidates   Candidate[]
-  approvals    BatchApproval[]
-  certificates Certificate[]
+  candidates      Candidate[]
+  approvals       BatchApproval[]
+  certificates    Certificate[]
 
   @@index([status, lastActivityAt])
   @@index([centreId, createdAt])
@@ -91,16 +93,16 @@ model Batch {
 // -------------------- 4. CANDIDATES --------------------
 
 model Candidate {
-  id      String @id @default(uuid())
-  batchId String
-  batch   Batch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
   fullName    String
   phoneNumber String
   email       String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   certificate Certificate?
 
@@ -124,20 +126,20 @@ enum ApprovalAction {
 }
 
 model BatchApproval {
-  id      String @id @default(uuid())
-  batchId String
-  batch   Batch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  id            String         @id @default(uuid())
+  batchId       String
+  batch         Batch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
-  officerId String
-  officer   User   @relation(fields: [officerId], references: [id])
+  officerId     String
+  officer       User           @relation(fields: [officerId], references: [id])
 
   stage         ApprovalStage
   action        ApprovalAction
   approvalRound Int            @default(1)
   comment       String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@unique([batchId, officerId, stage, approvalRound])
   @@index([batchId, stage, approvalRound])
@@ -152,18 +154,18 @@ enum CertificateStatus {
 }
 
 model Certificate {
-  id                String @id @default(uuid())
-  certificateNumber String @unique
+  id                 String            @id @default(uuid())
+  certificateNumber  String            @unique
 
-  candidateId String    @unique
-  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  candidateId        String            @unique
+  candidate          Candidate         @relation(fields: [candidateId], references: [id])
 
-  batchId String
-  batch   Batch  @relation(fields: [batchId], references: [id])
+  batchId            String
+  batch              Batch             @relation(fields: [batchId], references: [id])
 
-  verificationCode String @unique
-  pdfStoragePath   String
-  pdfHash          String
+  verificationCode   String            @unique
+  pdfStoragePath     String
+  pdfHash            String
 
   status             CertificateStatus @default(ISSUED)
   cancellationReason String?
@@ -171,11 +173,11 @@ model Certificate {
   cancelledById      String?
   cancelledBy        User?             @relation("CancelledBy", fields: [cancelledById], references: [id])
 
-  issuedAt  DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  issuedAt           DateTime          @default(now())
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  deliveryLogs DeliveryLog[]
+  deliveryLogs       DeliveryLog[]
 
   @@index([batchId])
   @@map("certificates")
@@ -191,20 +193,20 @@ enum DeliveryStatus {
 }
 
 model DeliveryLog {
-  id            String      @id @default(uuid())
-  certificateId String
-  certificate   Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  id              String         @id @default(uuid())
+  certificateId   String
+  certificate     Certificate    @relation(fields: [certificateId], references: [id], onDelete: Cascade)
 
-  recipientPhone String
-  channel        String         @default("WHATSAPP")
-  status         DeliveryStatus @default(QUEUED)
+  recipientPhone  String
+  channel         String         @default("WHATSAPP")
+  status          DeliveryStatus @default(QUEUED)
 
   providerMsgId   String?
   errorMessage    String?
   responsePayload Json?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   @@index([certificateId, status])
   @@map("delivery_logs")
@@ -213,18 +215,18 @@ model DeliveryLog {
 // -------------------- 8. AUDIT LOGS --------------------
 
 model AuditLog {
-  id         String @id @default(uuid())
+  id         String   @id @default(uuid())
   entityType String
   entityId   String
 
-  actorId String
-  actor   User   @relation(fields: [actorId], references: [id])
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
 
-  action    String
-  metadata  Json?
-  ipAddress String?
+  action     String
+  metadata   Json?
+  ipAddress  String?
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([createdAt])
